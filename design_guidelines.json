@@ -1,0 +1,234 @@
+{
+  "app_name": "AI + Music Hub",
+  "personality": "1 iOS-Native Clean structure with 4 Tactile/Playful colorful solid tiles",
+  "personality_one_liner": "A clean, modern hub that balances a highly functional, minimalist UI with 4 distinct, vibrantly colored solid entry points.",
+  "color": {
+    "surface": "#F7F7F7",
+    "onSurface": "#1C1C1E",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C1C1E",
+    "surfaceTertiary": "#E5E5EA",
+    "onSurfaceTertiary": "#8E8E93",
+    "surfaceInverse": "#1C1C1E",
+    "onSurfaceInverse": "#F7F7F7",
+    "brand": "#2D6A4F",
+    "brandPrimary": "#2D6A4F",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#D4A373",
+    "onBrandSecondary": "#1C1C1E",
+    "brandTertiary": "#8F9E8B",
+    "onBrandTertiary": "#1C1C1E",
+    "success": "#40916C",
+    "onSuccess": "#FFFFFF",
+    "warning": "#E9C46A",
+    "onWarning": "#1C1C1E",
+    "error": "#C92A42",
+    "onError": "#FFFFFF",
+    "border": "#E5E5EA",
+    "borderStrong": "#C7C7CC",
+    "divider": "#E5E5EA",
+    "tile1_studio": "#2D6A4F",
+    "onTile1": "#FFFFFF",
+    "tile2_notes": "#D4A373",
+    "onTile2": "#1C1C1E",
+    "tile3_social": "#8F9E8B",
+    "onTile3": "#1C1C1E",
+    "tile4_chat": "#C92A42",
+    "onTile4": "#FFFFFF",
+    "dark": {
+      "surface": "#121212",
+      "onSurface": "#F7F7F7",
+      "surfaceSecondary": "#1E1E1E",
+      "onSurfaceSecondary": "#F7F7F7",
+      "surfaceTertiary": "#2C2C2E",
+      "onSurfaceTertiary": "#98989D",
+      "surfaceInverse": "#F7F7F7",
+      "onSurfaceInverse": "#1C1C1E",
+      "brand": "#40916C",
+      "brandPrimary": "#40916C",
+      "onBrandPrimary": "#121212",
+      "brandSecondary": "#E9C46A",
+      "onBrandSecondary": "#121212",
+      "brandTertiary": "#A3B19B",
+      "onBrandTertiary": "#121212",
+      "success": "#52B788",
+      "onSuccess": "#121212",
+      "warning": "#F4A261",
+      "onWarning": "#121212",
+      "error": "#FF4D6D",
+      "onError": "#121212",
+      "border": "#2C2C2E",
+      "borderStrong": "#48484A",
+      "divider": "#2C2C2E",
+      "tile1_studio": "#40916C",
+      "onTile1": "#121212",
+      "tile2_notes": "#E9C46A",
+      "onTile2": "#121212",
+      "tile3_social": "#A3B19B",
+      "onTile3": "#121212",
+      "tile4_chat": "#FF4D6D",
+      "onTile4": "#121212"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Outfit",
+    "textFontFamily": "Figtree",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 32
+    }
+  },
+  "spacing": {
+    "rule": "Generous margins to support the clean aesthetic. 2x2 grid should have md gap and lg outer padding. Avoid cramming elements.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "xl": 24,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "stack_only",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass on the sticky top header of the Public Channel social feed.",
+      "Use glass for the bottom transport control bar in the Looper Studio.",
+      "Apply glassmorphism to floating action buttons (FABs)."
+    ],
+    "dont's": [
+      "Do not use glass on the 4 main home tiles; they must be solid abstract colors.",
+      "Do not blur individual chat bubbles."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Login",
+      "purpose": "Email/Phone OTP entry.",
+      "states": {
+        "loading": "Spinner over the 'Send OTP' button.",
+        "empty": "Clean centered input form.",
+        "error": "Inline red text below input + subtle haptic shake."
+      },
+      "layout": "Large display title top-aligned with ample whitespace. Single column input (Email or Phone), large brandPrimary pill button. KeyboardAvoidingView used."
+    },
+    {
+      "name": "Home",
+      "purpose": "Hub dashboard containing the 4 main entry points.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Header with 'Hub' display text and Settings gear icon. Below, a 2x2 grid (flexWrap: 'wrap', space-between) containing 4 large square touchable cards (width ~48% to fit nicely with gaps). Each card uses one of the 4 defined solid tile colors (tile1 to tile4), completely borderless and flat, featuring a large icon and text at the bottom left."
+    },
+    {
+      "name": "Chat with AI",
+      "purpose": "1-on-1 AI assistant conversation.",
+      "states": {
+        "loading": "Skeleton chat bubbles.",
+        "empty": "Greeting from AI: 'How can I help you create today?'",
+        "error": "Message failed to send, tap to retry."
+      },
+      "layout": "Standard chat interface. Messages from AI in surfaceSecondary, user messages in brandPrimary. Sticky input area at the bottom inside KeyboardAvoidingView."
+    },
+    {
+      "name": "Studio",
+      "purpose": "Looper music studio to record, stack tracks, and control volume/tempo.",
+      "states": {
+        "loading": "Loading preset effects...",
+        "empty": "4 empty track rows saying 'Tap to record track'.",
+        "error": "Microphone permission denied."
+      },
+      "layout": "Vertical list of track rows. Each row has a record/play/mute toggle and a volume slider. A fixed glassmorphic bottom bar contains the global transport controls (Play All, Stop, Master Tempo Slider)."
+    },
+    {
+      "name": "Musical Notes",
+      "purpose": "Hum to detect notes or type a song for chords.",
+      "states": {
+        "loading": "Analyzing audio/generating chords...",
+        "empty": "Segmented control: [Record Melody] vs [Type Song].",
+        "error": "Could not detect notes. Try again."
+      },
+      "layout": "If 'Record': Large central microphone button with expanding ripple rings. If 'Type': Form with text input for song name, dropdown for instrument, and a primary CTA. Results displayed in a flat surfaceSecondary card."
+    },
+    {
+      "name": "Public Channel",
+      "purpose": "Shared social feed where users post.",
+      "states": {
+        "loading": "Skeleton feed cards.",
+        "empty": "No posts yet. Be the first to share!",
+        "error": "Failed to load feed. Tap to retry."
+      },
+      "layout": "Scrollable vertical list of cards. Each card has a user avatar, name, text/content, and action row (Like, Comment). Glassmorphic top header. Floating Action Button (FAB) at bottom right to compose a post."
+    },
+    {
+      "name": "Settings",
+      "purpose": "Theme toggle, profile, and logout.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Standard iOS-style list rows grouped in surfaceSecondary rounded containers. Includes a Switch for Dark/Light mode and a destructive red text row for Logout."
+    }
+  ],
+  "images": {
+    "login_hero": {
+      "url": "https://images.pexels.com/photos/7135053/pexels-photo-7135053.jpeg",
+      "dark": "https://images.pexels.com/photos/6985201/pexels-photo-6985201.jpeg",
+      "alt": "Abstract vibrant color blur gradient used as subtle header background in Login."
+    },
+    "studio_empty": {
+      "url": "https://images.unsplash.com/photo-1518972559570-7cc1309f3229",
+      "alt": "Modern audio mixer used as subtle backdrop for Studio empty state."
+    },
+    "notes_empty": {
+      "url": "https://images.pexels.com/photos/34303390/pexels-photo-34303390.jpeg",
+      "alt": "Musical notes empty state illustration."
+    }
+  },
+  "haptics": {
+    "events": {
+      "button_press": "selection",
+      "toggle_switch": "light",
+      "record_start": "heavy",
+      "record_stop": "medium",
+      "pull_to_refresh": "medium",
+      "error": "notification_error"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Load 'Outfit' for headings/display and 'Figtree' for body/text. Ensure all text falls back gracefully if fonts fail.",
+    "The Home screen is a Stack root (no bottom tabs), relying entirely on the 2x2 grid of 4 large solid-colored tiles for navigation. The 4 custom colors (tile1-tile4) MUST be used as the background of these cards to fulfill the 'abstract solid' requirement.",
+    "Implement the theme toggle in Settings. Default to light mode but respect the device preference initially. The color scheme provides distinct hexes for both light and dark modes.",
+    "Ensure the Studio looper interface uses a sticky bottom bar for global controls (Play, Stop, Tempo). Do not let it scroll with the tracks. Use `expo-glass-effect` (or `expo-blur`) for this bar.",
+    "Never use indigo, blue, purple, violet, or orange. Stick to the provided palette (Emerald, Ochre, Crimson, Sage) and monochrome neutrals.",
+    "Ensure all text inputs (OTP, Song Name, AI Chat input) are wrapped in a properly configured KeyboardAvoidingView with appropriate vertical offset."
+  ]
+}

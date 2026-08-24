@@ -1,0 +1,44 @@
+{
+  "summary": "Comprehensive backend + frontend testing for AI + Music Hub. Backend: 30/30 pytest cases pass covering auth (OTP request/verify/me/profile update, 401 protections), chat (Claude 4.6 send/history/clear, empty rejection), notes AI (from-song via Claude), melody detection (synthetic A4 WAV correctly detected), and public channel (posts CRUD, like toggle, comments, invalid IDs). Frontend: Login (email->OTP flow) works, home renders 2x2 tile grid (4/4 tiles), Chat with AI sends message + Aria replies via Claude, Studio renders 4 tracks + Play all + tempo slider, Notes 'Find song notes' tab returns full AI breakdown (Key/Chords/Melody), Public Channel loads + compose modal opens + posts submit + like buttons render, Settings theme toggle works and dark mode applies, profile name edit modal opens. No react-native red screen, no deprecated packages (expo-av / expo-barcode-scanner / expo-background-fetch) detected. Studio mic recording is expected native-only per problem statement; screen still renders on web.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "channel compose-submit button", "issue": "On 390x844 viewport when the compose modal opens, the submit button occasionally sits outside the viewport (Playwright reported 'Element is outside of the viewport'); it does scroll into view but the modal content may need max-height/keyboard-avoiding to stay comfortably visible on smaller phones.", "testID": "compose-submit", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Console warns: 'shadow*' style props are deprecated (use boxShadow)", "Console warns: props.pointerEvents is deprecated (use style.pointerEvents)", "Animated: `useNativeDriver` not supported on web (harmless warning)"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_backend_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(LOW) Replace deprecated RN Web style props: `shadow*` -> `boxShadow`, and `props.pointerEvents` -> `style.pointerEvents`, to silence dev-console warnings.",
+    "(LOW) Verify the compose modal on the Public Channel keeps the 'Post to channel' button inside the viewport on 390x844 (e.g., wrap in KeyboardAvoidingView + ScrollView, or cap modal height). Functionally the button works after scroll-into-view."
+  ],
+  "critical_code_review_comments": [
+    "server.py cleanly returns public user shape (no _id leak); posts/comments also stripped of _id. Good.",
+    "verify-otp deletes OTP even on expiry/attempt-cap — correct.",
+    "notes/detect: min recording length gate at sr//4 samples is reasonable; empty-file/short-file both return 400 as tested.",
+    "toggle_like uses `$pull`/`$addToSet` idempotently and reflects state correctly.",
+    "Consider deleting orphaned comments when a post is deleted (no delete-post endpoint currently exists, so N/A today)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/test_backend_api.py (new)",
+    "/tmp/seed_otp.py (helper — will not persist)"
+  ],
+  "success_rate": {"backend": "100% (30/30)", "frontend": "~95% (all critical flows verified end-to-end)"},
+  "seed_data_creation": "Test users are created on-the-fly via seeded OTPs (bcrypt hash of '123456') in Mongo `otps` collection, then verify-otp is called. Each test user is cleaned up (users, chat_messages, note_lookups, posts, comments, otps) via session-scoped teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "To seed an OTP for UI login without an email inbox: `python -c` with the pymongo+passlib snippet in /app/backend/tests/conftest.py::_seed_otp_sync (email must be lowercased; server lowercases before Mongo lookup). Backend uses EXPO_PUBLIC_BACKEND_URL (in /app/frontend/.env). Test suite must be invoked with `-o addopts='-n 0'` to override the xdist config in /app/backend/pytest.ini (xdist parallel + shared preview backend was already the intended config; single-worker mode is safe here).",
+  "rca_of_issue": "N/A — no bug fixes required. Two initial test-suite failures were self-inflicted: (1) fixtures used `asyncio.get_event_loop().run_until_complete` which is unreliable in modern Python — switched to sync pymongo; (2) test emails were mixed-case but the server lowercases email before Mongo lookup, so seeded OTPs were unfindable — fixed by lowercasing in the seed helper and in test emails. After both fixes, 30/30 backend tests pass."
+}
