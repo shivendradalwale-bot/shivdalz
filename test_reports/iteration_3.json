@@ -1,0 +1,34 @@
+{
+  "summary": "Verified BUG FIX for AI + Music Hub: (a) Chat lyrics endpoint now returns REAL lyrics via lyrics.ovh instead of a copyright refusal, and (b) Assistant text renders WITHOUT raw '**' or '---' via the new RichText renderer. Backend: 5/5 new lyrics/format tests pass (test_lyrics_and_format.py) + 32/32 regression tests pass (test_backend_api.py). Frontend (mobile viewport 390x844): logged in as mtest@gmail.com, sent 'give me the lyrics of Imagine by John Lennon' in Chat -> received full multi-line Imagine lyrics with a clean bold header '🎵 Imagine — John Lennon' (no raw '**', no raw '---'). Musical Notes tab -> 'Find song notes' for 'Twinkle Twinkle Little Star' on Piano -> section labels (Key & Time / Main Chords / Melody Notes / Tips) rendered as BOLD headings, chord line 'C - F - C - G - C - G - C', melody notes shown, no raw '**' or '---' anywhere. Backend lyrics behavior confirmed: (1) 'lyrics of Imagine by John Lennon' returns real Imagine verses; (2) 'lyrics for Shape of You' auto-infers Ed Sheeran and returns real lyrics; (3) 'lyrics of qwzptxlmnoop by zzblorkbork' returns a graceful message (no crash, no copyright lecture); (4) non-lyrics chat still hits Claude cleanly. No deprecated Expo packages detected (no expo-av, expo-barcode-scanner, or expo-background-fetch). No React Native red screen.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_lyrics_and_format.py",
+    "/app/backend/tests/test_backend_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_lyrics.xml",
+    "/app/test_reports/pytest/pytest_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py chat/message correctly gates on 'lyric' substring, calls extract_song (Claude JSON) then fetch_lyrics (lyrics.ovh, url-quoted, timeout=15s, strips French header, collapses blank lines). If title missing OR provider miss -> graceful fallback strings; if provider errors -> logs and falls through to Claude for normal reply. No _id leaked (uses str(inserted_id)).",
+    "notes/from-song system prompt explicitly forbids '---', markdown tables, '#' headings, and code fences — verified in output: only bold labels remained, all handled by RichText.",
+    "RichText in ui.tsx correctly: (a) renders **bold** via parseInline splitting on /\\*\\*[^*]+\\*\\*/g and applying fontWeight 700; (b) collapses lines that are only 3+ dashes/asterisks/underscores/em-dashes to a hairline divider View; (c) supports '# heading' and '- bullet' lines; (d) strips stray '**' from mixed text so nothing renders raw. Chat and Notes both use RichText for assistant text.",
+    "Lyrics fetch uses urllib.parse.quote(safe='') on both artist and title — correct for URL segment encoding.",
+    "Chat message persists user + assistant messages to Mongo; history GET/DELETE unchanged. Regression suite (32/32) confirms no side effects."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_lyrics_and_format.py (NEW — 5 tests covering lyrics + notes formatting)"
+  ],
+  "success_rate": {"backend": "100% (37/37: 32 regression + 5 lyrics/format)", "frontend": "100% of chat-lyrics + notes rendering flows verified on mobile viewport 390x844"},
+  "seed_data_creation": "Ensured seeded user mtest@gmail.com / password123 exists in Mongo (bcrypt-hashed password_hash upserted); used by the Playwright UI test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Lyrics come from https://api.lyrics.ovh/v1/{artist}/{title} (public, no key). If that service is temporarily unreachable, TestChatLyrics.test_lyrics_no_artist_shape_of_you will pytest.skip on graceful-fallback (does NOT fail). Backend URL: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Seeded UI login: mtest@gmail.com / password123. Deep-linking works: navigate directly to /chat and /notes after login. RichText renderer lives in /app/frontend/src/components/ui.tsx (lines 35-111).",
+  "rca_of_issue": "Original bugs: (1) Claude refused to reproduce full copyrighted lyrics -> fixed by routing lyric-intent messages to lyrics.ovh (non-LLM). (2) Raw markdown '**' and '---' visible in UI -> fixed by RichText component that parses bold, dividers, headings, and bullets. Both fixes verified end-to-end via backend pytest + Playwright UI checks. No new issues introduced."
+}

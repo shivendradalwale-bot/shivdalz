@@ -1,6 +1,7 @@
 import os
 import re
 import io
+import json
 import random
 import logging
 import ipaddress
@@ -9,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Annotated
 from html import escape
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 import jwt
 import httpx
@@ -432,8 +433,59 @@ async def update_profile(body: UpdateProfileBody, user=Depends(get_current_user)
 CHAT_SYSTEM = (
     "You are Aria, the friendly AI assistant inside the AI + Music Hub app. "
     "You help users with anything creative or general. Keep answers clear, warm and concise. "
-    "You are especially knowledgeable about music, songwriting, instruments and production."
+    "You are especially knowledgeable about music, songwriting, instruments and production.\n\n"
+    "Formatting rules (important): write clean, presentable replies for a mobile chat. "
+    "Use short paragraphs. You may use **bold** sparingly for key terms or short section labels. "
+    "Do NOT use horizontal rules ('---'), markdown tables, or code fences. "
+    "For lists, put each item on its own line starting with '- '."
 )
+
+LYRICS_EXTRACT_SYSTEM = (
+    "You extract song information from a user's request. "
+    "Reply with ONLY compact JSON of the form {\"artist\": \"\", \"title\": \"\"}. "
+    "Identify the song title and its most likely well-known recording artist. "
+    "If the user named an artist, use it; otherwise infer the most famous artist for that song. "
+    "If you cannot identify a specific song, return empty strings. No other text."
+)
+
+
+async def extract_song(text: str):
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id="lyrics-extract",
+                       system_message=LYRICS_EXTRACT_SYSTEM).with_model("anthropic", "claude-sonnet-4-6")
+        raw = await chat.send_message(UserMessage(text=text))
+        m = re.search(r"\{.*\}", raw or "", re.S)
+        if not m:
+            return "", ""
+        j = json.loads(m.group(0))
+        return (j.get("artist") or "").strip(), (j.get("title") or "").strip()
+    except Exception as e:
+        logger.error(f"extract_song error: {e}")
+        return "", ""
+
+
+async def fetch_lyrics(artist: str, title: str):
+    if not artist or not title:
+        return None
+    url = f"https://api.lyrics.ovh/v1/{quote(artist, safe='')}/{quote(title, safe='')}"
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(url)
+    except Exception as e:
+        logger.error(f"lyrics fetch error: {e}")
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        data = r.json()
+    except Exception:
+        return None
+    lyr = (data.get("lyrics") or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    # Some responses prefix with a French "Paroles de la chanson ... par ..." header line.
+    lyr = re.sub(r"^paroles de la chanson.*?\n", "", lyr, flags=re.I).strip()
+    # Collapse 3+ blank lines
+    lyr = re.sub(r"\n{3,}", "\n\n", lyr)
+    return lyr or None
 
 
 @api_router.get("/chat/history")
@@ -462,6 +514,26 @@ async def chat_message(body: ChatMessageBody, user=Depends(get_current_user)):
     prior = await db.chat_messages.find({"user_id": uid}).sort("created_at", 1).to_list(500)
     now = now_utc()
     await db.chat_messages.insert_one({"user_id": uid, "role": "user", "text": text, "created_at": now})
+
+    # Lyrics requests: fetch real lyrics from a lyrics provider instead of the LLM
+    # (which is trained to refuse reproducing full copyrighted lyrics).
+    if "lyric" in text.lower():
+        artist, title = await extract_song(text)
+        if title:
+            lyrics = await fetch_lyrics(artist, title)
+            if lyrics:
+                header = f"🎵 **{title}**" + (f" — {artist}" if artist else "")
+                reply = f"{header}\n\n{lyrics}"
+            elif artist:
+                reply = (f"I couldn't find the lyrics for **{title}** by {artist}. "
+                         "Double-check the spelling, or try another song.")
+            else:
+                reply = (f"I found the song **{title}**, but I need the artist to look up the lyrics. "
+                         f"Try asking like: \"lyrics of {title} by <artist>\".")
+            saved = await db.chat_messages.insert_one(
+                {"user_id": uid, "role": "assistant", "text": reply, "created_at": now_utc()})
+            return {"id": str(saved.inserted_id), "role": "assistant", "text": reply}
+        # No song identified — fall through to a normal chat reply.
 
     history_text = "\n".join(
         f"{'User' if m['role'] == 'user' else 'Aria'}: {m['text']}" for m in prior[-20:])
@@ -496,13 +568,14 @@ async def notes_from_song(body: NotesFromSongBody, user=Depends(get_current_user
     system = (
         "You are a music teacher. When given a song name and an instrument, provide a clear, "
         "beginner-friendly breakdown for playing that song on that instrument. "
-        "Format your answer with these sections using plain text (no markdown tables):\n"
-        "1) 'Key & Time' - the key and time signature.\n"
-        "2) 'Main Chords' - the chord progression (e.g. C - G - Am - F).\n"
-        "3) 'Melody Notes' - the opening melody as note names (e.g. E E F G G F E D).\n"
-        "4) 'Tips' - one or two short playing tips for this instrument.\n"
+        "Structure the answer with these bold section labels, each followed by its content on the next line:\n"
+        "**Key & Time** - the key and time signature.\n"
+        "**Main Chords** - the chord progression (e.g. C - G - Am - F).\n"
+        "**Melody Notes** - the opening melody as note names (e.g. E E F G G F E D).\n"
+        "**Tips** - one or two short playing tips for this instrument.\n"
+        "Do NOT use horizontal rules ('---'), markdown tables, headings ('#'), or code fences. "
         "If you are unsure of the exact song, give the most likely well-known version and say so briefly. "
-        "Keep it concise."
+        "Keep it concise and clean."
     )
     prompt = f"Song: {song}\nInstrument: {instrument}\nGive the playable notes and chords."
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"notes-{user['_id']}", system_message=system).with_model(

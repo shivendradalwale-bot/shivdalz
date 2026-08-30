@@ -16,6 +16,11 @@ Mobile app with a clean home page with 4 options: "Chat with AI", "Studio", "Mus
 - Backend: FastAPI, MongoDB (motor). JWT bearer auth. Emergent-managed email (Resend proxy) for OTP. emergentintegrations LlmChat (Claude Sonnet 4.6). numpy + pydub/ffmpeg for melody pitch detection (autocorrelation).
 - Theme: ThemeProvider (light/dark palettes from design_guidelines.json), persisted via storage util.
 
+## Chat lyrics + clean formatting (2026-08-30)
+- Aria now returns real song lyrics by fetching from the lyrics.ovh public lyrics API when a message asks for lyrics (Claude only extracts song+artist; the LLM no longer refuses). Falls back gracefully when a song can't be found.
+- Added a lightweight `RichText` renderer (src/components/ui.tsx): renders **bold**, headings, bullets and dividers so replies/notes look clean — no raw `**` or `---`. Prompts tuned to avoid horizontal rules/tables.
+- Note: lyrics.ovh is a free public source suitable for a prototype; a licensed lyrics provider should be used before commercial launch (backend interface can stay the same).
+
 ## Auth (updated 2026-08-30): password-based with email OTP verification at sign-up
 - Sign up: full name + email + password + confirm → 6-digit email OTP verifies email → account created + JWT.
 - Login: email + password only (no OTP after signup).

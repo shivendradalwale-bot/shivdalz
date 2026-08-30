@@ -13,7 +13,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText, Header, useToast } from "@/src/components/ui";
+import { AppText, Header, RichText, useToast } from "@/src/components/ui";
 import { FONT, RADIUS, SPACING, useTheme } from "@/src/theme";
 import { api } from "@/src/api/client";
 
@@ -87,9 +87,11 @@ export default function Chat() {
               : { backgroundColor: colors.surfaceSecondary, borderBottomLeftRadius: 4, borderColor: colors.border, borderWidth: StyleSheet.hairlineWidth },
           ]}
         >
-          <AppText style={{ color: mine ? colors.onBrand : colors.onSurface, fontSize: 15, lineHeight: 21 }}>
-            {item.text}
-          </AppText>
+          {mine ? (
+            <AppText style={{ color: colors.onBrand, fontSize: 15, lineHeight: 21 }}>{item.text}</AppText>
+          ) : (
+            <RichText text={item.text} color={colors.onSurface} size={15} />
+          )}
         </View>
       </View>
     );

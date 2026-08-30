@@ -22,7 +22,7 @@ import {
   setAudioModeAsync,
 } from "expo-audio";
 
-import { AppText, Button, Header, useToast } from "@/src/components/ui";
+import { AppText, Button, Header, RichText, useToast } from "@/src/components/ui";
 import { FONT, RADIUS, SPACING, useTheme } from "@/src/theme";
 import { api } from "@/src/api/client";
 
@@ -287,7 +287,7 @@ function SongLookup({ colors, toast, insets }: any) {
             <Ionicons name="musical-notes" size={18} color={colors.brand} />
             <AppText display weight="bold" style={{ fontSize: 16 }}>{song} · {instrument}</AppText>
           </View>
-          <AppText style={{ color: colors.onSurface, fontSize: 14, lineHeight: 22 }}>{result}</AppText>
+          <RichText text={result} color={colors.onSurface} size={14} />
         </View>
       ) : null}
     </KeyboardAwareScrollView>

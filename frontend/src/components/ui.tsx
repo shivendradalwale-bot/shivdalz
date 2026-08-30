@@ -32,6 +32,84 @@ export function AppText(
   );
 }
 
+/* ----------------------------- RichText (light markdown) ----------------------------- */
+function parseInline(str: string) {
+  const parts = str.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) => {
+    const b = p.match(/^\*\*([^*]+)\*\*$/);
+    if (b) {
+      return (
+        <Text key={i} style={{ fontFamily: FONT.display, fontWeight: "700" }}>
+          {b[1]}
+        </Text>
+      );
+    }
+    // strip any stray solo markdown stars/underscores so they never show raw
+    return <Text key={i}>{p.replace(/\*\*/g, "")}</Text>;
+  });
+}
+
+export function RichText({
+  text,
+  color,
+  size = 15,
+  lineHeight = 22,
+}: {
+  text: string;
+  color?: string;
+  size?: number;
+  lineHeight?: number;
+}) {
+  const { colors } = useTheme();
+  const c = color || colors.onSurface;
+  const lines = String(text || "").split("\n");
+  return (
+    <View>
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (/^(-{3,}|\*{3,}|_{3,}|—{3,})$/.test(trimmed)) {
+          return (
+            <View
+              key={idx}
+              style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 10 }}
+            />
+          );
+        }
+        const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (heading) {
+          return (
+            <Text
+              key={idx}
+              style={{ color: c, fontFamily: FONT.display, fontWeight: "700", fontSize: size + 2, marginTop: idx ? 10 : 0, marginBottom: 3 }}
+            >
+              {parseInline(heading[2])}
+            </Text>
+          );
+        }
+        const bullet = trimmed.match(/^[-*•]\s+(.*)$/);
+        if (bullet) {
+          return (
+            <View key={idx} style={{ flexDirection: "row", marginBottom: 3 }}>
+              <Text style={{ color: c, fontFamily: FONT.text, fontSize: size, lineHeight }}>{"•  "}</Text>
+              <Text style={{ color: c, fontFamily: FONT.text, fontSize: size, lineHeight, flex: 1 }}>
+                {parseInline(bullet[1])}
+              </Text>
+            </View>
+          );
+        }
+        if (trimmed === "") {
+          return <View key={idx} style={{ height: 7 }} />;
+        }
+        return (
+          <Text key={idx} style={{ color: c, fontFamily: FONT.text, fontSize: size, lineHeight, marginBottom: 3 }}>
+            {parseInline(line)}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
 /* ----------------------------- Button ----------------------------- */
 export function Button({
   title,
