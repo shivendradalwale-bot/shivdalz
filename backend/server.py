@@ -15,6 +15,14 @@ import jwt
 import httpx
 import numpy as np
 from pydub import AudioSegment
+
+# Use the pip-bundled ffmpeg binary so audio decoding works everywhere
+# (survives pod restarts and deployment, no system package needed).
+try:
+    import imageio_ffmpeg
+    AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
+except Exception:
+    pass
 from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header
@@ -153,17 +161,17 @@ async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
         raise HTTPException(status_code=500, detail="Failed to send verification email")
 
 
-def otp_email_html(code: str) -> str:
+def code_email_html(intro: str, code: str, expiry_min: int) -> str:
     return (
         '<table role="presentation" width="100%" style="max-width:480px;margin:0 auto;'
         'font-family:Arial,Helvetica,sans-serif"><tr><td style="padding:28px 24px">'
         f'<h1 style="font-size:20px;color:#1C1C1E;margin:0 0 8px">AI + Music Hub</h1>'
-        '<p style="font-size:15px;color:#3a3a3c;margin:0 0 20px">Use this code to sign in. '
-        'It expires in 5 minutes.</p>'
+        f'<p style="font-size:15px;color:#3a3a3c;margin:0 0 20px">{escape(intro)} '
+        f'This code expires in {expiry_min} minutes.</p>'
         f'<div style="font-size:34px;letter-spacing:10px;font-weight:bold;color:#2D6A4F;'
         f'background:#F0F5F2;border-radius:12px;padding:18px 0;text-align:center">{escape(code)}</div>'
         '<p style="font-size:12px;color:#8E8E93;margin:22px 0 0">If you did not request this, '
-        'you can ignore this email. We will never ask you to share this code with anyone.</p>'
+        'you can safely ignore this email. Keep this code private.</p>'
         f'<p style="font-size:12px;color:#8E8E93;margin:14px 0 0">Sent by {escape(EMAIL_FROM_NAME)}.</p>'
         '</td></tr></table>'
     )
@@ -207,13 +215,51 @@ def public_user(user: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
-class RequestOtpBody(BaseModel):
+MIN_PASSWORD_LEN = 8
+
+
+def hash_password(password: str) -> str:
+    return pwd_ctx.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return pwd_ctx.verify(password, password_hash)
+    except Exception:
+        return False
+
+
+def validate_password(password: str):
+    if len(password) < MIN_PASSWORD_LEN:
+        raise HTTPException(status_code=422, detail=f"Password must be at least {MIN_PASSWORD_LEN} characters")
+    if len(password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=422, detail="Password is too long")
+
+
+class SignupBody(BaseModel):
+    full_name: str
     email: EmailStr
+    password: str
 
 
-class VerifyOtpBody(BaseModel):
+class VerifySignupBody(BaseModel):
     email: EmailStr
     code: str
+
+
+class LoginBody(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ForgotBody(BaseModel):
+    email: EmailStr
+
+
+class ResetBody(BaseModel):
+    email: EmailStr
+    code: str
+    password: str
 
 
 class UpdateProfileBody(BaseModel):
@@ -240,49 +286,131 @@ class CommentBody(BaseModel):
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
-@api_router.post("/auth/request-otp")
-async def request_otp(body: RequestOtpBody):
+@api_router.post("/auth/signup")
+async def signup(body: SignupBody):
     email = body.email.lower().strip()
+    full_name = body.full_name.strip()[:120]
+    if not full_name:
+        raise HTTPException(status_code=422, detail="Please enter your full name")
+    validate_password(body.password)
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=409, detail="An account already exists for this email. Please log in.")
+
     code = f"{random.randint(0, 999999):06d}"
-    await db.otps.delete_many({"email": email})
-    await db.otps.insert_one({
-        "email": email,
-        "code_hash": pwd_ctx.hash(code),
-        "expires_at": now_utc() + timedelta(minutes=5),
-        "attempts": 0,
-        "created_at": now_utc(),
-    })
-    await send_email(to=email, subject="Your AI + Music Hub sign-in code", html=otp_email_html(code))
+    await db.pending_signups.replace_one(
+        {"email": email},
+        {
+            "email": email,
+            "name": full_name,
+            "password_hash": hash_password(body.password),
+            "code_hash": pwd_ctx.hash(code),
+            "expires_at": now_utc() + timedelta(minutes=10),
+            "attempts": 0,
+            "created_at": now_utc(),
+        },
+        upsert=True,
+    )
+    await send_email(
+        to=email,
+        subject="Verify your email for AI + Music Hub",
+        html=code_email_html("Use this code to verify your email and finish creating your account.", code, 10),
+    )
     return {"status": "sent", "email": email}
 
 
-@api_router.post("/auth/verify-otp")
-async def verify_otp(body: VerifyOtpBody):
+@api_router.post("/auth/verify-signup")
+async def verify_signup(body: VerifySignupBody):
     email = body.email.lower().strip()
-    rec = await db.otps.find_one({"email": email})
+    rec = await db.pending_signups.find_one({"email": email})
     if not rec:
-        raise HTTPException(status_code=400, detail="No code requested. Please request a new one.")
+        raise HTTPException(status_code=400, detail="No pending sign-up found. Please sign up again.")
     if rec["expires_at"].replace(tzinfo=timezone.utc) < now_utc():
-        await db.otps.delete_many({"email": email})
-        raise HTTPException(status_code=400, detail="Code expired. Please request a new one.")
+        await db.pending_signups.delete_many({"email": email})
+        raise HTTPException(status_code=400, detail="Code expired. Please sign up again.")
     if rec.get("attempts", 0) >= 5:
-        await db.otps.delete_many({"email": email})
-        raise HTTPException(status_code=400, detail="Too many attempts. Request a new code.")
+        await db.pending_signups.delete_many({"email": email})
+        raise HTTPException(status_code=400, detail="Too many attempts. Please sign up again.")
     if not pwd_ctx.verify(body.code.strip(), rec["code_hash"]):
-        await db.otps.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
+        await db.pending_signups.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
         raise HTTPException(status_code=400, detail="Incorrect code. Try again.")
 
-    await db.otps.delete_many({"email": email})
-    user = await db.users.find_one({"email": email})
-    if not user:
-        res = await db.users.insert_one({
-            "email": email,
-            "name": email.split("@")[0],
-            "created_at": now_utc(),
-        })
-        user = await db.users.find_one({"_id": res.inserted_id})
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        await db.pending_signups.delete_many({"email": email})
+        raise HTTPException(status_code=409, detail="An account already exists for this email. Please log in.")
+
+    res = await db.users.insert_one({
+        "email": email,
+        "name": rec["name"],
+        "password_hash": rec["password_hash"],
+        "is_active": True,
+        "email_verified": True,
+        "created_at": now_utc(),
+    })
+    await db.pending_signups.delete_many({"email": email})
+    user = await db.users.find_one({"_id": res.inserted_id})
     token = create_token(str(user["_id"]))
     return {"token": token, "user": public_user(user)}
+
+
+@api_router.post("/auth/login")
+async def login(body: LoginBody):
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(body.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_token(str(user["_id"]))
+    return {"token": token, "user": public_user(user)}
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(body: ForgotBody):
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if user:
+        code = f"{random.randint(0, 999999):06d}"
+        await db.password_resets.replace_one(
+            {"email": email},
+            {
+                "email": email,
+                "code_hash": pwd_ctx.hash(code),
+                "expires_at": now_utc() + timedelta(minutes=15),
+                "attempts": 0,
+                "used": False,
+                "created_at": now_utc(),
+            },
+            upsert=True,
+        )
+        await send_email(
+            to=email,
+            subject="Reset your AI + Music Hub password",
+            html=code_email_html("Use this code to reset your password.", code, 15),
+        )
+    return {"status": "sent", "email": email}
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(body: ResetBody):
+    email = body.email.lower().strip()
+    validate_password(body.password)
+    rec = await db.password_resets.find_one({"email": email})
+    if not rec or rec.get("used"):
+        raise HTTPException(status_code=400, detail="No reset request found. Please try again.")
+    if rec["expires_at"].replace(tzinfo=timezone.utc) < now_utc():
+        await db.password_resets.delete_many({"email": email})
+        raise HTTPException(status_code=400, detail="Reset code expired. Please request a new one.")
+    if rec.get("attempts", 0) >= 5:
+        await db.password_resets.delete_many({"email": email})
+        raise HTTPException(status_code=400, detail="Too many attempts. Please request a new code.")
+    if not pwd_ctx.verify(body.code.strip(), rec["code_hash"]):
+        await db.password_resets.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=400, detail="Incorrect code. Try again.")
+
+    await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(body.password)}})
+    await db.password_resets.delete_many({"email": email})
+    return {"status": "reset"}
 
 
 @api_router.get("/auth/me")

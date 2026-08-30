@@ -1,4 +1,4 @@
-"""Shared fixtures for backend tests."""
+"""Shared fixtures for backend tests (password + OTP sign-up)."""
 import os
 import io
 import wave
@@ -6,27 +6,23 @@ import struct
 import math
 import random
 import string
-import asyncio
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 import pytest
 import requests
 from pymongo import MongoClient
 from passlib.context import CryptContext
 from dotenv import load_dotenv
-from pathlib import Path
 
-# Load backend env for MONGO_URL / DB_NAME
 load_dotenv(Path(__file__).resolve().parents[1] / '.env')
 
-BASE_URL = os.environ['EXPO_PUBLIC_BACKEND_URL'].rstrip('/') if os.environ.get('EXPO_PUBLIC_BACKEND_URL') else None
-if not BASE_URL:
-    # Read from frontend/.env fallback
-    with open(Path(__file__).resolve().parents[2] / 'frontend' / '.env') as f:
-        for line in f:
-            if line.startswith('EXPO_PUBLIC_BACKEND_URL='):
-                BASE_URL = line.strip().split('=', 1)[1].rstrip('/')
-                break
+BASE_URL = None
+for line in open(Path(__file__).resolve().parents[2] / 'frontend' / '.env'):
+    if line.startswith('EXPO_PUBLIC_BACKEND_URL='):
+        BASE_URL = line.strip().split('=', 1)[1].strip().strip('"').rstrip('/')
+        break
+assert BASE_URL, "EXPO_PUBLIC_BACKEND_URL not found in frontend/.env"
 
 MONGO_URL = os.environ['MONGO_URL']
 DB_NAME = os.environ['DB_NAME']
@@ -51,46 +47,44 @@ def api():
     return s
 
 
-async def _seed_otp(email: str, code: str = "123456"):
-    client = MongoClient(MONGO_URL)
-    db = client[DB_NAME]
-    db.otps.delete_many({"email": email})
-    db.otps.insert_one({
-        "email": email,
-        "code_hash": pwd_ctx.hash(code),
-        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "attempts": 0,
-        "created_at": datetime.now(timezone.utc),
-    })
-    client.close()
+def _db():
+    return MongoClient(MONGO_URL)[DB_NAME]
 
 
-def seed_otp(email, code="123456"):
-    import asyncio as _a
-    # kept function name compatible; run sync
-    _seed_otp_sync(email, code)
-
-
-def _seed_otp_sync(email: str, code: str = "123456"):
+def seed_signup_code(email: str, code: str = "123456"):
+    """Override the bcrypt code_hash for a pending signup so we can verify with a known code."""
     email = email.lower().strip()
-    client = MongoClient(MONGO_URL)
-    db = client[DB_NAME]
-    db.otps.delete_many({"email": email})
-    db.otps.insert_one({
-        "email": email,
-        "code_hash": pwd_ctx.hash(code),
-        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "attempts": 0,
-        "created_at": datetime.now(timezone.utc),
-    })
-    client.close()
+    db = _db()
+    db.pending_signups.update_one(
+        {"email": email},
+        {"$set": {"code_hash": pwd_ctx.hash(code),
+                   "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+                   "attempts": 0}},
+    )
 
 
-def _cleanup_sync(email):
-    from bson import ObjectId  # noqa
+def seed_reset_code(email: str, code: str = "123456"):
     email = email.lower().strip()
-    client = MongoClient(MONGO_URL)
-    db = client[DB_NAME]
+    db = _db()
+    db.password_resets.update_one(
+        {"email": email},
+        {"$set": {"code_hash": pwd_ctx.hash(code),
+                   "expires_at": datetime.now(timezone.utc) + timedelta(minutes=15),
+                   "attempts": 0, "used": False}},
+    )
+
+
+def pending_exists(email: str) -> bool:
+    return _db().pending_signups.find_one({"email": email.lower()}) is not None
+
+
+def reset_exists(email: str) -> bool:
+    return _db().password_resets.find_one({"email": email.lower()}) is not None
+
+
+def cleanup_email(email: str):
+    email = email.lower().strip()
+    db = _db()
     user = db.users.find_one({"email": email})
     if user:
         uid = str(user["_id"])
@@ -99,23 +93,29 @@ def _cleanup_sync(email):
         db.posts.delete_many({"author_id": uid})
         db.comments.delete_many({"author_id": uid})
         db.users.delete_one({"_id": user["_id"]})
-    db.otps.delete_many({"email": email})
-    client.close()
+    db.pending_signups.delete_many({"email": email})
+    db.password_resets.delete_many({"email": email})
 
 
-def cleanup_email(email):
-    _cleanup_sync(email)
+def create_user_via_flow(api_s, base, email: str, password: str, name: str = "Test User") -> dict:
+    """Signup -> seed known code -> verify. Handles email 422 as expected."""
+    cleanup_email(email)
+    r = api_s.post(f"{base}/api/auth/signup", json={"full_name": name, "email": email, "password": password})
+    # 200 or 502 (email undeliverable) both leave pending_signups doc — check.
+    assert r.status_code in (200, 502), f"signup unexpected: {r.status_code} {r.text}"
+    assert pending_exists(email), f"pending_signups doc missing for {email}"
+    seed_signup_code(email, "123456")
+    v = api_s.post(f"{base}/api/auth/verify-signup", json={"email": email, "code": "123456"})
+    assert v.status_code == 200, f"verify-signup failed: {v.status_code} {v.text}"
+    return v.json()
 
 
 @pytest.fixture(scope="session")
 def test_user(api, base_url):
-    """Provision a real user via seeded OTP -> verify-otp. Yields dict {email,token,user}."""
-    email = f"test_{_rand_email()}"
-    seed_otp(email, "123456")
-    r = api.post(f"{base_url}/api/auth/verify-otp", json={"email": email, "code": "123456"})
-    assert r.status_code == 200, f"verify-otp failed: {r.status_code} {r.text}"
-    data = r.json()
-    yield {"email": email, "token": data["token"], "user": data["user"]}
+    email = _rand_email()
+    password = "testpass123"
+    data = create_user_via_flow(api, base_url, email, password)
+    yield {"email": email, "password": password, "token": data["token"], "user": data["user"]}
     cleanup_email(email)
 
 
@@ -126,12 +126,10 @@ def auth_headers(test_user):
 
 @pytest.fixture(scope="session")
 def second_user(api, base_url):
-    email = f"test2_{_rand_email()}"
-    seed_otp(email, "123456")
-    r = api.post(f"{base_url}/api/auth/verify-otp", json={"email": email, "code": "123456"})
-    assert r.status_code == 200
-    data = r.json()
-    yield {"email": email, "token": data["token"], "user": data["user"]}
+    email = _rand_email()
+    password = "testpass456"
+    data = create_user_via_flow(api, base_url, email, password, name="Second User")
+    yield {"email": email, "password": password, "token": data["token"], "user": data["user"]}
     cleanup_email(email)
 
 
@@ -141,7 +139,6 @@ def second_auth_headers(second_user):
 
 
 def make_test_wav(freq_hz=440.0, seconds=1.5, sr=22050):
-    """Generate a synthetic sine-wave WAV for pitch-detect endpoint."""
     buf = io.BytesIO()
     with wave.open(buf, 'wb') as wf:
         wf.setnchannels(1)

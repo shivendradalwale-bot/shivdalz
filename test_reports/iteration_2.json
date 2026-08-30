@@ -1,0 +1,45 @@
+{
+  "summary": "Comprehensive backend + frontend testing for the NEW password-auth + email-OTP-on-signup flow (AI + Music Hub). Backend: 32/32 pytest tests pass covering signup validation (password<8 -> 422, invalid email -> 422, blank name -> 422), pending-signup + verify-signup (creates user & returns JWT+user, wrong code -> 400 with attempts increment, 5-attempt lockout, no-pending -> 400), duplicate signup -> 409, login success/wrong-password/unknown-email (401 generic 'Invalid email or password'), forgot-password always 200 (with reset doc created only for known email), reset-password (password<8 -> 422, wrong code -> 400, correct -> old-password 401 + new-password 200), /api/auth/me + PUT /api/auth/profile with new JWT, chat/message via Claude 4.6 (+history persist + clear + empty rejection), notes/from-song via Claude, notes/detect on synthetic 440 Hz WAV (A4 correctly detected after installing ffmpeg), and channel posts + like toggle + comments. Frontend: mobile 390x844 viewport. Verified: login screen loads; toggle to signup screen; signup validations (password mismatch toast, short-password toast); real signup (delivered+tag@resend.dev) navigates to verify screen; seeded code -> verify-submit -> navigates to /home; wrong-password login shows generic 'Invalid email or password' toast; correct login -> /home; forgot -> reset screen; reset with seeded code -> back to login; login with new password -> /home; Home tiles all 4 render (Chat/Studio/Musical Notes/Public Channel). No React Native red screen. No deprecated Expo packages (expo-av/expo-barcode-scanner/expo-background-fetch) detected. Note: signup with @example.com returns 502 from email provider (expected — undeliverable domain), pending_signups doc IS still written so the flow can be exercised by seeding.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": [
+        "Console warns: 'shadow*' style props deprecated (use boxShadow)",
+        "Console warns: props.pointerEvents deprecated (use style.pointerEvents)",
+        "Console warns: Animated useNativeDriver not supported on web (harmless)"
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_backend_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(INFRA/env) ffmpeg was missing at start-up, causing /api/notes/detect to fail with 400 'Could not read the recording'. Installed via `apt-get install -y ffmpeg` during this run. Recommend adding ffmpeg to the backend container image / postinstall script so this survives rebuilds.",
+    "(LOW) Address RN-Web console deprecations (shadow* -> boxShadow, props.pointerEvents -> style.pointerEvents) to silence warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py auth logic is correct: signup writes pending_signups (bcrypt code_hash, expires_at, attempts) upsert, then send_email; verify-signup validates expiry & attempts before code check; reset flow mirrors this. No _id ever leaks in responses.",
+    "login intentionally uses a generic 401 'Invalid email or password' for both wrong-password and unknown-email — correct enumeration-safe UX.",
+    "forgot-password ALWAYS returns 200 for both known/unknown emails, and password_resets doc is only created for known emails — correct enumeration-safe behavior. NOTE: for a known email whose send_email fails (502), the reset doc IS still created (because it is written before send_email) — code path is fine for testing/seed override, but consider a try/except around send_email to avoid leaking 502 to the client when the email doc creation succeeded but delivery failed.",
+    "validate_password enforces >=8 chars and <=72 bytes (bcrypt limit) — good.",
+    "verify-signup + reset-password both delete their pending/reset docs on success or hard failure (expiry / lockout) — good hygiene.",
+    "login.tsx correctly wires all requested testIDs (login-, signup-, verify-, forgot-, reset-, back-to-login, resend-code, go-to-signup, go-to-login, forgot-password); eye toggle uses secureTextEntry={!showPw} + setShowPw toggle on rightIcon Pressable — wired correctly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (rewritten for password-auth: signup+seed+verify fixtures; sync pymongo; delivered@resend.dev pattern documented)",
+    "/app/backend/tests/test_backend_api.py (rewritten: TestSignup, TestLogin, TestForgotReset, TestMeProfile + regression Chat/Notes/Channel)",
+    "/tmp/seed_helper.py (helper for UI test to override bcrypt code_hash in pending_signups / password_resets)",
+    "ffmpeg installed via apt-get (env dependency for pydub/ffprobe in /api/notes/detect)"
+  ],
+  "success_rate": {"backend": "100% (32/32)", "frontend": "100% of critical auth flows verified end-to-end on mobile viewport 390x844"},
+  "seed_data_creation": "Test users are created on-the-fly via /api/auth/signup (which may return 502 for @example.com — pending doc still written) then Mongo pending_signups.code_hash is overridden to bcrypt('123456') and /api/auth/verify-signup is called. Session-scoped teardown deletes users, chat_messages, note_lookups, posts, comments, pending_signups, password_resets.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Auth model: password + email-OTP-on-signup. To seed a code without waiting for email, override Mongo `pending_signups.code_hash` (or `password_resets.code_hash`) using bcrypt('123456'). See /tmp/seed_helper.py. Signup with @example.com returns 502 from email provider (undeliverable) but still creates the pending doc — use `delivered+<tag>@resend.dev` for a real deliverable-black-hole email if you want a 200. Backend URL: EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env. Run tests with `pytest tests/ -v` (pytest.ini already sets -n 2 --dist loadscope). ffmpeg is required for /api/notes/detect — installed this iteration.",
+  "rca_of_issue": "N/A — no functional bugs. Environment: ffprobe/ffmpeg missing at start → /api/notes/detect returned 400. Fixed by `apt-get install -y ffmpeg`. Recommend baking ffmpeg into image."
+}

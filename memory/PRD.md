@@ -16,6 +16,13 @@ Mobile app with a clean home page with 4 options: "Chat with AI", "Studio", "Mus
 - Backend: FastAPI, MongoDB (motor). JWT bearer auth. Emergent-managed email (Resend proxy) for OTP. emergentintegrations LlmChat (Claude Sonnet 4.6). numpy + pydub/ffmpeg for melody pitch detection (autocorrelation).
 - Theme: ThemeProvider (light/dark palettes from design_guidelines.json), persisted via storage util.
 
+## Auth (updated 2026-08-30): password-based with email OTP verification at sign-up
+- Sign up: full name + email + password + confirm → 6-digit email OTP verifies email → account created + JWT.
+- Login: email + password only (no OTP after signup).
+- Forgot password: 6-digit reset code emailed → set new password.
+- Passwords bcrypt-hashed (min 8 chars). Pending signups in `pending_signups`, reset codes in `password_resets` (both single-use, time-limited, hashed). Existing `users`/JWT/`get_current_user` preserved so chat/posts/notes keep working. 32/32 backend tests + all auth frontend flows pass.
+- Audio decoding uses pip-bundled `imageio-ffmpeg` (no system ffmpeg dependency; survives restarts/deploy).
+
 ## Implemented (2026-06 / build date 2026-08-24)
 - Email OTP auth: request-otp, verify-otp (creates user on first verify), me, profile update. JWT 30-day tokens, secure-store on device.
 - Chat with AI (Claude): history persistence, send message, clear. Typewriter/typing indicator UX.
